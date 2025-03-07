@@ -70,20 +70,39 @@ const sampleStudySets: StudySet[] = [
   },
 ];
 
+// Local storage key
+const STORAGE_KEY = 'flashlearn_study_sets';
+
 export const useStudySets = () => {
-  // In a real app, we would fetch from an API or database
-  const [studySets, setStudySets] = useState<StudySet[]>([]);
+  // Initialize with data from localStorage or sample data
+  const [studySets, setStudySets] = useState<StudySet[]>(() => {
+    const storedSets = localStorage.getItem(STORAGE_KEY);
+    return storedSets ? JSON.parse(storedSets) : [];
+  });
   const [loading, setLoading] = useState(true);
 
+  // Load sample data if no data exists in localStorage
   useEffect(() => {
-    // Simulate API call with timeout
-    const timer = setTimeout(() => {
-      setStudySets(sampleStudySets);
+    if (studySets.length === 0) {
+      // Simulate API call with timeout
+      const timer = setTimeout(() => {
+        setStudySets(sampleStudySets);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(sampleStudySets));
+        setLoading(false);
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    } else {
       setLoading(false);
-    }, 500);
+    }
+  }, [studySets.length]);
 
-    return () => clearTimeout(timer);
-  }, []);
+  // Update localStorage whenever studySets change
+  useEffect(() => {
+    if (!loading && studySets.length > 0) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(studySets));
+    }
+  }, [studySets, loading]);
 
   const getStudySet = (id: string) => {
     return studySets.find(set => set.id === id);
@@ -98,7 +117,9 @@ export const useStudySets = () => {
       updatedAt: now,
     };
     
-    setStudySets([...studySets, newStudySet]);
+    const updatedSets = [...studySets, newStudySet];
+    setStudySets(updatedSets);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedSets));
     return newStudySet.id;
   };
 
