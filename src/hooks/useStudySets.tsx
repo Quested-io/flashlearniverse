@@ -1,5 +1,6 @@
 
 import { useState, useEffect } from 'react';
+import { QuestConfig, trackConfigChanged, QuestCard, getUserStudySets, saveUserStudySets } from '@/lib/quested';
 
 // Type definitions
 export interface Flashcard {
@@ -16,6 +17,9 @@ export interface StudySet {
   creator: string;
   createdAt: string;
   updatedAt: string;
+  questConfig?: QuestConfig;
+  difficulty?: 'easy' | 'medium' | 'hard';
+  timeLimit?: number;
 }
 
 // Sample data
@@ -81,26 +85,87 @@ export const useStudySets = () => {
   });
   const [loading, setLoading] = useState(true);
 
-  // Load sample data if no data exists in localStorage
+  // Load data from both localStorage and Quested - only on initial mount
   useEffect(() => {
-    if (studySets.length === 0) {
-      // Simulate API call with timeout
-      const timer = setTimeout(() => {
-        setStudySets(sampleStudySets);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(sampleStudySets));
-        setLoading(false);
-      }, 500);
+    const loadStudySets = async () => {
+      let sets: StudySet[] = [];
       
-      return () => clearTimeout(timer);
-    } else {
+      // First check localStorage
+      const storedSets = localStorage.getItem(STORAGE_KEY);
+      if (storedSets) {
+        sets = JSON.parse(storedSets);
+      }
+      
+      // Then try to get from Quested if available and no sets in localStorage
+      if (sets.length === 0) {
+        try {
+          const questedSets = await getUserStudySets();
+          if (questedSets && questedSets.sets) {
+            // Convert Quested sets to StudySet format
+            const questedStudySets = Object.entries(questedSets.sets).map(([id, set]) => {
+              return {
+                id,
+                title: set.title,
+                description: set.description || '',
+                cards: set.cards.map((card, index) => ({
+                  id: `quest-card-${index}`,
+                  term: card.term,
+                  definition: card.definition
+                })),
+                creator: 'Quested',
+                createdAt: set.createdAt,
+                updatedAt: set.createdAt,
+              } as StudySet;
+            });
+            
+            sets = questedStudySets;
+          }
+        } catch (error) {
+          console.error('Failed to load study sets from Quested:', error);
+        }
+      }
+      
+      // If still no sets, use sample data
+      if (sets.length === 0) {
+        sets = [...sampleStudySets];
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(sets));
+      }
+      
+      setStudySets(sets);
       setLoading(false);
-    }
-  }, [studySets.length]);
+    };
+    
+    loadStudySets();
+  }, []);
 
   // Update localStorage whenever studySets change
   useEffect(() => {
     if (!loading && studySets.length > 0) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(studySets));
+      
+      // Also save to Quested if possible
+      try {
+        // Convert to Quested format
+        const questedSets = {
+          sets: studySets.reduce((acc, set) => {
+            // Only store essential data in Quested
+            acc[set.id] = {
+              title: set.title,
+              description: set.description,
+              cards: set.cards.map(card => ({
+                term: card.term,
+                definition: card.definition
+              })),
+              createdAt: set.createdAt
+            };
+            return acc;
+          }, {} as Record<string, { title: string; description: string; cards: QuestCard[]; createdAt: string }>)
+        };
+        
+        saveUserStudySets(questedSets);
+      } catch (error) {
+        console.error('Failed to save study sets to Quested:', error);
+      }
     }
   }, [studySets, loading]);
 
@@ -117,9 +182,46 @@ export const useStudySets = () => {
       updatedAt: now,
     };
     
+    // If this is a Quested configured study set, track the configuration change
+    if (newStudySet.questConfig) {
+      // Track configuration changes for analytics only
+      trackConfigChanged(newStudySet.questConfig);
+    }
+    
     const updatedSets = [...studySets, newStudySet];
     setStudySets(updatedSets);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedSets));
+    return newStudySet.id;
+  };
+  
+  // Create a study set from a Quested configuration
+  const createFromQuestConfig = (config: QuestConfig, id?: string) => {
+    const now = new Date().toISOString().split('T')[0];
+    
+    // Map Quested cards to Flashcards
+    const cards: Flashcard[] = config.cards.map((card, index) => ({
+      id: `quest-card-${index}-${Date.now()}`,
+      term: card.term,
+      definition: card.definition
+    }));
+    
+    const newStudySet: StudySet = {
+      id: id || `quest-${Date.now()}`,
+      title: config.title || 'Quested Study Set',
+      description: config.description || 'Created from Quested configuration',
+      cards,
+      creator: 'Quested',
+      createdAt: now,
+      updatedAt: now,
+      questConfig: config,
+      difficulty: config.difficulty,
+      timeLimit: config.timeLimit
+    };
+    
+    // Track configuration change for analytics only
+    trackConfigChanged(config);
+    
+    const updatedSets = [...studySets, newStudySet];
+    setStudySets(updatedSets);
     return newStudySet.id;
   };
 
@@ -128,5 +230,6 @@ export const useStudySets = () => {
     loading,
     getStudySet,
     addStudySet,
+    createFromQuestConfig,
   };
 };

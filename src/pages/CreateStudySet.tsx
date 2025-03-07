@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import FlashcardForm from '@/components/FlashcardForm';
 import { useStudySets, Flashcard } from '@/hooks/useStudySets';
+import { saveUserStudySets } from '@/lib/quested';
 
 const CreateStudySet = () => {
   const navigate = useNavigate();
@@ -82,6 +83,16 @@ const CreateStudySet = () => {
       cards: cardsWithIds,
       creator: 'You', // In a real app, this would come from authentication
     });
+    
+    // Save creation data with Quested
+    // saveUserStudySets({
+    //   action: 'create',
+    //   setId: newSetId,
+    //   title: title,
+    //   description: description,
+    //   cardCount: cards.length,
+    //   timestamp: new Date().toISOString()
+    // });
 
     toast({
       title: 'Study set created!',
